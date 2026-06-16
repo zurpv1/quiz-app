@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiz Practice</title>
+  <script src="jszip.min.js"></script>
+  <style>
+    :root {
+      --rscc-red: #DD0000;
+      --border: #d7d7d7;
+      --bg: #f5f5f5;
+      --card: #ffffff;
+      --text: #222222;
+      --muted: #666666;
+      --success: #1f7a3f;
+      --danger: #9b1c1c;
+      --warning-bg: #FFF4B8;
+      --warning-border: #FFCC00;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    .app { max-width: 950px; margin: 0 auto; padding: 22px; }
+    .header, .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+    h1 { margin: 0 0 8px; color: var(--rscc-red); font-size: 30px; }
+    h2 { margin-top: 0; color: var(--rscc-red); }
+    .subtitle, .small { color: var(--muted); }
+    .file-note { background: var(--warning-bg); border: 1px solid var(--warning-border); padding: 12px; border-radius: 8px; margin-top: 12px; }
+    label { font-weight: bold; display: block; margin-bottom: 6px; }
+    input[type="file"], input[type="text"], select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 16px; background: white; }
+    button { border: none; border-radius: 7px; background: var(--rscc-red); color: white; padding: 11px 16px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #AA0000; filter: none; }
+    button.secondary { background: #000000; }
+    button.light { background: #e8e8e8; color: #222; border: 1px solid #ccc; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+    .quick-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 18px; }
+    .quick-buttons button { padding: 16px; font-size: 17px; }
+    .status-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; color: var(--muted); font-weight: bold; margin-bottom: 12px; }
+    .progress-shell { width: 100%; height: 14px; background: #ddd; border-radius: 999px; overflow: hidden; margin: 0 0 18px; }
+    .progress-bar { height: 100%; width: 0%; background: var(--rscc-red); transition: width 0.25s ease; }
+    .question { font-size: 24px; font-weight: bold; margin: 18px 0; }
+    .choices { display: grid; gap: 10px; margin: 18px 0; }
+    .choice { display: block; width: 100%; text-align: left; background: #fafafa; color: #222; border: 1px solid var(--border); padding: 13px; border-radius: 8px; font-weight: normal; }
+    .choice:hover { background: #f0f0f0; filter: none; }
+    .choice.selected { outline: 3px solid #FFCC00; }
+    .choice.correct { border-color: var(--success); background: #eaf7ee; }
+    .choice.incorrect { border-color: var(--danger); background: #f9e8e8; }
+    .choice input[type="checkbox"] { margin-right: 10px; transform: scale(1.15); cursor: pointer; }
+    label.choice { cursor: pointer; }
+    .feedback { border-radius: 8px; padding: 14px; margin-top: 16px; display: none; }
+    .feedback.correct { display: block; background: #eaf7ee; border: 1px solid var(--success); }
+    .feedback.incorrect { display: block; background: #f9e8e8; border: 1px solid var(--danger); }
+    .hidden { display: none; }
+    .summary-score { font-size: 32px; color: var(--rscc-red); margin: 10px 0; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 15px; }
+    th, td { border-bottom: 1px solid var(--border); text-align: left; padding: 10px; vertical-align: top; }
+    th { color: var(--rscc-red); background: #f7f7f7; }
+    @media (max-width: 650px) { .app { padding: 12px; } h1 { font-size: 24px; } .question { font-size: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <h1 id="pageTitle">Quiz Practice</h1>
+      <p class="subtitle">Local study quiz using your selected Excel workbook.</p>
+      <div class="file-note"><strong>How to use:</strong> Load a quiz workbook with <code>Questions</code> and <code>Results</code> sheets. After the quiz, an updated workbook will download automatically. Save it over the existing quiz workbook to keep one file.</div>
+    </div>
+
+    <div id="setupPanel" class="panel">
+      <h2>Setup</h2>
+      <label for="xlsxFile">Quiz Workbook (.xlsx)</label>
+      <input id="xlsxFile" type="file" accept=".xlsx" />
+      <div class="actions"><button id="loadBtn">Load Quiz Workbook</button></div>
+      <p id="loadStatus" class="small">No workbook loaded yet.</p>
+      <div id="statsArea" class="small"></div>
+      <div id="quizStartArea" class="hidden">
+        <h2>Start Quiz</h2>
+        <p id="questionCountText"></p>
+        <div class="controls">
+          <div>
+            <label for="typeSelect">Question Type</label>
+            <select id="typeSelect">
+              <option value="All">All Types</option>
+              <option value="MC">Multiple Choice</option>
+              <option value="MS">Multiple Select</option>
+              <option value="TF">True/False</option>
+              <option value="FIB">Fill in the Blank</option>
+            </select>
+          </div>
+        </div>
+        <div class="quick-buttons">
+          <button id="quiz10Btn">10 Questions</button>
+          <button id="quiz25Btn">25 Questions</button>
+          <button id="quizAllBtn">All Questions</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="quizPanel" class="panel hidden">
+      <div class="status-row"><div id="progressText"></div><div id="scoreText">Score: 0</div></div>
+      <div class="progress-shell"><div id="progressBar" class="progress-bar"></div></div>
+      <div id="questionText" class="question"></div>
+      <div id="choicesArea" class="choices"></div>
+      <div id="fibArea" class="hidden"><label for="fibInput">Your Answer</label><input id="fibInput" type="text" autocomplete="off" /></div>
+      <div id="feedback" class="feedback"></div>
+      <div class="actions"><button id="checkBtn">Check Answer</button><button id="nextBtn" class="secondary hidden">Next Question</button><button id="quitBtn" class="light">End Quiz</button></div>
+    </div>
+
+    <div id="resultsPanel" class="panel hidden">
+      <h2>Quiz Results</h2>
+      <div id="finalScore" class="summary-score"></div>
+      <p id="finalSummary"></p>
+      <div id="downloadStatus" class="file-note hidden"></div>
+      <div class="actions"><button id="restartBtn">Take Another Quiz</button><button id="missedBtn" class="secondary">Review Missed Questions</button></div>
+      <div id="reviewArea"></div>
+    </div>
+  </div>
+
+<script>
+let allQuestions = [], quizQuestions = [], currentIndex = 0, score = 0, selectedAnswer = "", answered = false, results = [];
+let quizTitle = "Quiz Practice", historical = [], selectedQuestionCount = 0, currentResultSaved = false;
+let workbookZip = null, workbookFileName = "quiz_workbook.xlsx", resultsSheetPath = "", questionsSheetPath = "";
+
+const pageTitle = document.getElementById("pageTitle"), xlsxFile = document.getElementById("xlsxFile"), loadBtn = document.getElementById("loadBtn"), loadStatus = document.getElementById("loadStatus"), statsArea = document.getElementById("statsArea"), quizStartArea = document.getElementById("quizStartArea"), questionCountText = document.getElementById("questionCountText"), typeSelect = document.getElementById("typeSelect");
+const setupPanel = document.getElementById("setupPanel"), quizPanel = document.getElementById("quizPanel"), resultsPanel = document.getElementById("resultsPanel"), progressText = document.getElementById("progressText"), progressBar = document.getElementById("progressBar"), scoreText = document.getElementById("scoreText"), questionText = document.getElementById("questionText"), choicesArea = document.getElementById("choicesArea"), fibArea = document.getElementById("fibArea"), fibInput = document.getElementById("fibInput"), feedback = document.getElementById("feedback"), checkBtn = document.getElementById("checkBtn"), nextBtn = document.getElementById("nextBtn"), quitBtn = document.getElementById("quitBtn"), restartBtn = document.getElementById("restartBtn"), missedBtn = document.getElementById("missedBtn"), finalScore = document.getElementById("finalScore"), finalSummary = document.getElementById("finalSummary"), reviewArea = document.getElementById("reviewArea"), downloadStatus = document.getElementById("downloadStatus");
+
+document.getElementById("quiz10Btn").addEventListener("click", () => startQuiz(10));
+document.getElementById("quiz25Btn").addEventListener("click", () => startQuiz(25));
+document.getElementById("quizAllBtn").addEventListener("click", () => startQuiz(allQuestions.length));
+typeSelect.addEventListener("change", updateQuestionCountText);
+
+function normalize(value){ return String(value || "").trim().toLowerCase(); }
+function escapeHtml(value){ return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+function shuffle(array){ const copy=[...array]; for(let i=copy.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [copy[i],copy[j]]=[copy[j],copy[i]]; } return copy; }
+function colIndex(cellRef){ const letters = String(cellRef || "").replace(/[0-9]/g, ""); let n=0; for(const ch of letters){ n = n*26 + ch.charCodeAt(0)-64; } return n-1; }
+function textContent(node){ return node ? node.textContent : ""; }
+function nodesByLocalName(parent, localName){
+  return Array.from(parent.getElementsByTagName("*")).filter(n => n.localName === localName);
+}
+function firstNodeByLocalName(parent, localName){
+  return nodesByLocalName(parent, localName)[0] || null;
+}
+function attr(node, name){ return node ? node.getAttribute(name) : null; }
+
+async function parseWorkbook(arrayBuffer){
+  workbookZip = await JSZip.loadAsync(arrayBuffer);
+  const parser = new DOMParser();
+  const workbookFile = workbookZip.file("xl/workbook.xml");
+  const relsFile = workbookZip.file("xl/_rels/workbook.xml.rels");
+  if(!workbookFile || !relsFile) throw new Error("Missing workbook.xml or workbook relationships.");
+
+  const workbookXml = parser.parseFromString(await workbookFile.async("text"), "application/xml");
+  const relsXml = parser.parseFromString(await relsFile.async("text"), "application/xml");
+
+  const relMap = {};
+  nodesByLocalName(relsXml, "Relationship").forEach(r => {
+    const id = attr(r, "Id");
+    let target = attr(r, "Target") || "";
+    target = target.replace(/^\//, "");
+    relMap[id] = target.startsWith("xl/") ? target : "xl/" + target;
+  });
+
+  const sheets = nodesByLocalName(workbookXml, "sheet").map(s => ({
+    name: attr(s, "name") || "",
+    id: attr(s, "r:id") || attr(s, "id")
+  }));
+
+  const qSheet = sheets.find(s => s.name.toLowerCase() === "questions");
+  const rSheet = sheets.find(s => s.name.toLowerCase() === "results");
+  if(!qSheet || !rSheet) throw new Error("Workbook must contain Questions and Results sheets.");
+
+  questionsSheetPath = relMap[qSheet.id];
+  resultsSheetPath = relMap[rSheet.id];
+  if(!questionsSheetPath || !resultsSheetPath) throw new Error("Could not resolve Questions or Results sheet paths.");
+
+  const sharedStrings = await loadSharedStrings(parser);
+  const questionRows = await readSheetRows(parser, questionsSheetPath, sharedStrings);
+  const resultRows = await readSheetRows(parser, resultsSheetPath, sharedStrings);
+  loadQuestionsFromRows(questionRows);
+  loadResultsFromRows(resultRows);
+}
+
+async function loadSharedStrings(parser){
+  const f = workbookZip.file("xl/sharedStrings.xml");
+  if(!f) return [];
+  const xml = parser.parseFromString(await f.async("text"), "application/xml");
+  return nodesByLocalName(xml, "si").map(si => nodesByLocalName(si, "t").map(t => t.textContent).join(""));
+}
+
+async function readSheetRows(parser, path, sharedStrings){
+  const sheetFile = workbookZip.file(path);
+  if(!sheetFile) throw new Error("Missing sheet XML: " + path);
+  const xml = parser.parseFromString(await sheetFile.async("text"), "application/xml");
+  const rows = [];
+  nodesByLocalName(xml, "row").forEach(rowNode => {
+    const row = [];
+    nodesByLocalName(rowNode, "c").forEach(c => {
+      const idx = colIndex(attr(c, "r"));
+      const t = attr(c, "t");
+      let val = "";
+      if(t === "s") {
+        val = sharedStrings[parseInt(textContent(firstNodeByLocalName(c, "v")) || "0", 10)] || "";
+      } else if(t === "inlineStr") {
+        val = textContent(firstNodeByLocalName(c, "t"));
+      } else {
+        val = textContent(firstNodeByLocalName(c, "v"));
+      }
+      row[idx] = val;
+    });
+    rows.push(row.map(v => v || ""));
+  });
+  return rows;
+}
+
+function loadQuestionsFromRows(rows){
+  if(!rows || rows.length < 3) throw new Error("Questions sheet does not contain expected rows.");
+  if(normalize(rows[0][0]) === "title") quizTitle = rows[0][1] || "Quiz Practice";
+  pageTitle.textContent = quizTitle; document.title = quizTitle;
+  const headerRowIndex = normalize(rows[1][0]) === "id" ? 1 : rows.findIndex(r => normalize(r[0]) === "id");
+  if(headerRowIndex < 0) throw new Error("Questions sheet must have an ID header row.");
+  const headers = rows[headerRowIndex].map(h => String(h || "").trim());
+  allQuestions = rows.slice(headerRowIndex + 1).map(row => {
+    const obj = {}; headers.forEach((h,i)=> obj[h] = row[i] ? String(row[i]).trim() : ""); return obj;
+  }).filter(q => q.ID && q.Type && q.Question && q.Answer);
+  if(allQuestions.length === 0) throw new Error("No valid questions found.");
+  loadStatus.textContent = `Loaded ${allQuestions.length} questions from ${workbookFileName}.`;
+  updateQuestionCountText(); quizStartArea.classList.remove("hidden");
+}
+
+function loadResultsFromRows(rows){
+  historical = [];
+  if(!rows || rows.length < 2){ updateStats(); return; }
+  const headers = rows[0].map(h => String(h || "").trim());
+  historical = rows.slice(1).map(row => {
+    const item = {}; headers.forEach((h,i)=> item[h] = row[i] ? String(row[i]).trim() : "");
+    return { Date:item.Date||"", QuestionCount:item.QuestionCount||item.Total||"", Score:parseFloat(item.Score||0), Total:parseFloat(item.Total||0), Percent:parseFloat(item.Percent||0) };
+  }).filter(x => x.Date && !isNaN(x.Percent));
+  updateStats();
+}
+
+function updateStats(){
+  if(historical.length === 0){ statsArea.innerHTML = ""; return; }
+  const last = historical[historical.length - 1];
+  const best = historical.reduce((a,b)=> b.Percent > a.Percent ? b : a, historical[0]);
+  const avg = (historical.reduce((s,i)=>s+i.Percent,0)/historical.length).toFixed(1);
+  statsArea.innerHTML = `<div class="file-note"><strong>Previous Results</strong><br>Attempts: ${historical.length}<br>Last Attempt: ${last.QuestionCount} questions — ${last.Score}/${last.Total} (${last.Percent}%)<br>Best Attempt: ${best.QuestionCount} questions — ${best.Score}/${best.Total} (${best.Percent}%)<br>Average: ${avg}%</div>`;
+}
+
+function updateQuestionCountText(){
+  if(!allQuestions.length) return;
+  const selectedType = typeSelect.value; let count = allQuestions.length;
+  if(selectedType !== "All") count = allQuestions.filter(q => q.Type === selectedType).length;
+  const label = selectedType === "All" ? "all question types" : typeSelect.options[typeSelect.selectedIndex].text;
+  questionCountText.textContent = `${count} questions are ready for ${label}.`;
+}
+
+loadBtn.addEventListener("click", async () => {
+  const file = xlsxFile.files[0];
+  if(!file){ loadStatus.textContent = "Please choose a quiz workbook first."; return; }
+  try{
+    workbookFileName = file.name;
+    loadStatus.textContent = "Loading quiz workbook...";
+    const buffer = await file.arrayBuffer();
+    await parseWorkbook(buffer);
+  }catch(err){ console.error(err); loadStatus.textContent = "There was a problem reading the quiz workbook. Make sure it has Questions and Results sheets."; }
+});
+
+function startQuiz(count){
+  let pool = allQuestions;
+  if(typeSelect.value !== "All") pool = pool.filter(q => q.Type === typeSelect.value);
+  if(pool.length === 0){ loadStatus.textContent = "No questions match that question type."; return; }
+  const requestedCount = Math.min(count, pool.length); selectedQuestionCount = requestedCount; quizQuestions = shuffle(pool).slice(0, requestedCount);
+  currentIndex = 0; score = 0; results = []; currentResultSaved = false;
+  setupPanel.classList.add("hidden"); resultsPanel.classList.add("hidden"); quizPanel.classList.remove("hidden"); showQuestion();
+}
+
+function showQuestion(){
+  answered=false; selectedAnswer=""; const q=quizQuestions[currentIndex];
+  progressText.textContent = `Question ${currentIndex+1} of ${quizQuestions.length}`; progressBar.style.width = `${(currentIndex/quizQuestions.length)*100}%`; scoreText.textContent = `Score: ${score}`;
+  questionText.textContent = q.Question; choicesArea.innerHTML = ""; fibInput.value = ""; feedback.className="feedback"; feedback.innerHTML=""; checkBtn.disabled=false; nextBtn.classList.add("hidden");
+  if(q.Type === "FIB"){ fibArea.classList.remove("hidden"); return; }
+  fibArea.classList.add("hidden"); let choices = q.Type === "TF" ? ["True","False"] : [q.ChoiceA,q.ChoiceB,q.ChoiceC,q.ChoiceD].filter(Boolean); choices = shuffle(choices);
+  choices.forEach(choice => {
+    if(q.Type === "MS"){
+      const label=document.createElement("label"); label.className="choice"; label.dataset.value=choice; const checkbox=document.createElement("input"); checkbox.type="checkbox"; const span=document.createElement("span"); span.textContent=choice; label.appendChild(checkbox); label.appendChild(span); checkbox.addEventListener("change",()=>{ if(answered){ checkbox.checked=!checkbox.checked; return; } label.classList.toggle("selected", checkbox.checked); }); choicesArea.appendChild(label);
+    } else {
+      const button=document.createElement("button"); button.className="choice"; button.dataset.value=choice; button.textContent=choice; button.addEventListener("click",()=>{ if(answered) return; document.querySelectorAll(".choice").forEach(btn=>btn.classList.remove("selected")); button.classList.add("selected"); selectedAnswer=choice; }); choicesArea.appendChild(button);
+    }
+  });
+}
+
+function splitAnswers(value){ return String(value||"").split("|").map(v=>normalize(v)).filter(Boolean).sort(); }
+function answersMatch(userAnswers, correctAnswers){ if(userAnswers.length !== correctAnswers.length) return false; return userAnswers.every((v,i)=>v===correctAnswers[i]); }
+function checkAnswer(){
+  if(answered) return; const q=quizQuestions[currentIndex]; let userAnswer="";
+  if(q.Type === "FIB") userAnswer = fibInput.value.trim();
+  else if(q.Type === "MS") userAnswer = Array.from(document.querySelectorAll(".choice.selected")).map(btn=>btn.dataset.value).join("|");
+  else userAnswer = selectedAnswer;
+  if(!userAnswer){ feedback.className="feedback incorrect"; feedback.innerHTML="<strong>Please enter or select an answer first.</strong>"; return; }
+  answered=true; let isCorrect = q.Type === "MS" ? answersMatch(splitAnswers(userAnswer), splitAnswers(q.Answer)) : normalize(userAnswer) === normalize(q.Answer); if(isCorrect) score++;
+  document.querySelectorAll(".choice").forEach(btn=>{ const value = btn.dataset.value || btn.textContent; const isCorrectChoice = q.Type === "MS" ? splitAnswers(q.Answer).includes(normalize(value)) : normalize(value) === normalize(q.Answer); const wasSelected = q.Type === "MS" ? btn.classList.contains("selected") : normalize(value) === normalize(userAnswer); if(isCorrectChoice) btn.classList.add("correct"); if(wasSelected && !isCorrectChoice) btn.classList.add("incorrect"); const cb=btn.querySelector('input[type="checkbox"]'); if(cb) cb.disabled=true; });
+  const answerDisplay = q.Type === "MS" ? q.Answer.split("|").join(", ") : q.Answer; const userAnswerDisplay = q.Type === "MS" ? userAnswer.split("|").join(", ") : userAnswer;
+  feedback.className = isCorrect ? "feedback correct" : "feedback incorrect"; feedback.innerHTML = `<strong>${isCorrect ? "Correct!" : "Not quite."}</strong><br>${!isCorrect ? `<strong>Your Answer:</strong> ${escapeHtml(userAnswerDisplay)}<br>` : ""}<strong>Answer:</strong> ${escapeHtml(answerDisplay)}<br><strong>Explanation:</strong> ${escapeHtml(q.Explanation || "No explanation provided.")}`;
+  results.push({question:q.Question, yourAnswer:userAnswerDisplay, correctAnswer:answerDisplay, explanation:q.Explanation, correct:isCorrect}); checkBtn.disabled=true; nextBtn.classList.remove("hidden"); scoreText.textContent = `Score: ${score}`;
+}
+checkBtn.addEventListener("click", checkAnswer); fibInput.addEventListener("keydown", e => { if(e.key === "Enter") checkAnswer(); });
+nextBtn.addEventListener("click", () => { currentIndex++; if(currentIndex >= quizQuestions.length) showResults(); else showQuestion(); }); quitBtn.addEventListener("click", showResults);
+
+async function showResults(){
+  progressBar.style.width = "100%"; quizPanel.classList.add("hidden"); resultsPanel.classList.remove("hidden");
+  const total = results.length || quizQuestions.length; const percent = total ? Math.round((score/total)*100) : 0;
+  finalScore.textContent = `${score} / ${total} (${percent}%)`; finalSummary.textContent = percent >= 80 ? "Nice work. You are in good shape on this set." : percent >= 60 ? "You are getting there. Review the missed questions and try again." : "This is a good study signal. Focus on the missed questions first.";
+  downloadStatus.classList.remove("hidden");
+  downloadStatus.innerHTML = "Quiz finished. Starting results download...<br><br><strong>Important:</strong> Save the downloaded workbook over your existing quiz workbook to preserve your results history.";
+  await downloadUpdatedWorkbook(); reviewArea.innerHTML="";
+}
+
+function makeResultRow(){ const total = results.length || quizQuestions.length; const percent = total ? Math.round((score/total)*100) : 0; return { Date:new Date().toISOString().split("T")[0], QuestionCount:selectedQuestionCount || total, Score:score, Total:total, Percent:percent }; }
+function buildResultsSheetXml(resultRows){
+  const rows = [["Date","QuestionCount","Score","Total","Percent"], ...resultRows.map(r=>[r.Date,r.QuestionCount,r.Score,r.Total,r.Percent])];
+  let xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E${rows.length}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData>`;
+  rows.forEach((row, rIdx)=>{ const rn = rIdx+1; xml += `<row r="${rn}">`; row.forEach((val,cIdx)=>{ const col = String.fromCharCode(65+cIdx); const ref = col+rn; const text = String(val ?? ""); xml += `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(text)}</t></is></c>`; }); xml += `</row>`; });
+  xml += `</sheetData></worksheet>`; return xml;
+}
+function xmlEscape(value){ return String(value).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&apos;"); }
+async function downloadUpdatedWorkbook(){
+  if(currentResultSaved){ downloadStatus.textContent = "Results already downloaded for this attempt."; return; }
+  const newResult = makeResultRow(); const combined = [...historical, newResult];
+  workbookZip.file(resultsSheetPath, buildResultsSheetXml(combined));
+  const blob = await workbookZip.generateAsync({type:"blob"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = workbookFileName; a.click();
+  historical = combined; currentResultSaved = true; updateStats();
+  downloadStatus.innerHTML = "Results download started.<br><br><strong>Save over:</strong> " + escapeHtml(workbookFileName) + "<br>This keeps your quiz bank and results in one workbook.";
+}
+
+restartBtn.addEventListener("click", () => { resultsPanel.classList.add("hidden"); setupPanel.classList.remove("hidden"); reviewArea.innerHTML=""; });
+missedBtn.addEventListener("click", () => {
+  const missed = results.filter(r => !r.correct);
+  if(missed.length === 0){ reviewArea.innerHTML = "<p><strong>No missed questions. Excellent!</strong></p>"; return; }
+  const rows = missed.map(r => `<tr><td>${escapeHtml(r.question)}</td><td>${escapeHtml(r.yourAnswer)}</td><td>${escapeHtml(r.correctAnswer)}</td><td>${escapeHtml(r.explanation || "")}</td></tr>`).join("");
+  reviewArea.innerHTML = `<h3>Missed Questions</h3><table><thead><tr><th>Question</th><th>Your Answer</th><th>Correct Answer</th><th>Explanation</th></tr></thead><tbody>${rows}</tbody></table>`;
+});
+</script>
+</body>
+</html>
