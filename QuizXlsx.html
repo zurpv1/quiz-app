@@ -132,7 +132,7 @@
           <button id="cancelDownloadBtn" class="light">Cancel</button>
         </div>
       </div>
-      <div class="actions"><button id="restartBtn">Take Another Quiz</button><button id="missedBtn" class="secondary">Review Missed Questions</button></div>
+      <div class="actions"><button id="restartBtn">Take Another Quiz</button><button id="missedBtn" class="secondary">Review Missed Questions</button><button id="retryMissedBtn" class="secondary">Retry Missed Questions</button></div>
       <div id="reviewArea"></div>
     </div>
   </div>
@@ -140,6 +140,7 @@
 <script>
 let allQuestions = [], quizQuestions = [], currentIndex = 0, score = 0, selectedAnswer = "", answered = false, results = [];
 let quizTitle = "Quiz Practice", historical = [], selectedQuestionCount = 0, currentResultSaved = false;
+let retryMode = false, retryQuestions = [], retryResults = [], originalResults = [], retryScore = 0, originalQuizQuestions = [];
 let workbookZip = null, workbookFileName = "quiz_workbook.xlsx", resultsSheetPath = "", questionsSheetPath = "";
 let workbookLoadedAt = null, workbookLastModified = null;
 
@@ -147,7 +148,7 @@ const setupHeader = document.getElementById("setupHeader");
 const quizHeader = document.getElementById("quizHeader");
 const quizHeaderTitle = document.getElementById("quizHeaderTitle");
 const pageTitle = document.getElementById("pageTitle"), xlsxFile = document.getElementById("xlsxFile"), loadBtn = document.getElementById("loadBtn"), loadStatus = document.getElementById("loadStatus"), statsArea = document.getElementById("statsArea"), quizStartArea = document.getElementById("quizStartArea"), questionCountText = document.getElementById("questionCountText"), typeSelect = document.getElementById("typeSelect");
-const setupPanel = document.getElementById("setupPanel"), quizPanel = document.getElementById("quizPanel"), resultsPanel = document.getElementById("resultsPanel"), progressText = document.getElementById("progressText"), progressBar = document.getElementById("progressBar"), scoreText = document.getElementById("scoreText"), questionText = document.getElementById("questionText"), choicesArea = document.getElementById("choicesArea"), fibArea = document.getElementById("fibArea"), fibInput = document.getElementById("fibInput"), feedback = document.getElementById("feedback"), checkBtn = document.getElementById("checkBtn"), nextBtn = document.getElementById("nextBtn"), quitBtn = document.getElementById("quitBtn"), restartBtn = document.getElementById("restartBtn"), missedBtn = document.getElementById("missedBtn"), finalScore = document.getElementById("finalScore"), finalSummary = document.getElementById("finalSummary"), reviewArea = document.getElementById("reviewArea"), downloadStatus = document.getElementById("downloadStatus"),
+const setupPanel = document.getElementById("setupPanel"), quizPanel = document.getElementById("quizPanel"), resultsPanel = document.getElementById("resultsPanel"), progressText = document.getElementById("progressText"), progressBar = document.getElementById("progressBar"), scoreText = document.getElementById("scoreText"), questionText = document.getElementById("questionText"), choicesArea = document.getElementById("choicesArea"), fibArea = document.getElementById("fibArea"), fibInput = document.getElementById("fibInput"), feedback = document.getElementById("feedback"), checkBtn = document.getElementById("checkBtn"), nextBtn = document.getElementById("nextBtn"), quitBtn = document.getElementById("quitBtn"), restartBtn = document.getElementById("restartBtn"), missedBtn = document.getElementById("missedBtn"), retryMissedBtn = document.getElementById("retryMissedBtn"), finalScore = document.getElementById("finalScore"), finalSummary = document.getElementById("finalSummary"), reviewArea = document.getElementById("reviewArea"), downloadStatus = document.getElementById("downloadStatus"),
 safetyBox = document.getElementById("safetyBox"),
 safetyDetails = document.getElementById("safetyDetails"),
 confirmDownloadBtn = document.getElementById("confirmDownloadBtn"),
@@ -159,6 +160,50 @@ document.getElementById("quizAllBtn").addEventListener("click", () => startQuiz(
 typeSelect.addEventListener("change", updateQuestionCountText);
 
 function normalize(value){ return String(value || "").trim().toLowerCase(); }
+
+function singularizeSimple(value){
+  let text = normalize(value);
+
+  // Conservative singular/plural handling for fill-in-the-blank answers.
+  // Examples: actions -> action, choices -> choice, arguments -> argument
+  if(text.endsWith("ies") && text.length > 3){
+    return text.slice(0, -3) + "y";
+  }
+
+  if(text.endsWith("es") && text.length > 2){
+    const base = text.slice(0, -2);
+    if(base.endsWith("ch") || base.endsWith("sh") || base.endsWith("x") || base.endsWith("s") || base.endsWith("z")){
+      return base;
+    }
+  }
+
+  if(text.endsWith("s") && !text.endsWith("ss") && text.length > 1){
+    return text.slice(0, -1);
+  }
+
+  return text;
+}
+
+function fibAnswerMatches(userAnswer, correctAnswer){
+  const userOptions = String(userAnswer || "")
+    .split("|")
+    .map(v => normalize(v))
+    .filter(Boolean);
+
+  const correctOptions = String(correctAnswer || "")
+    .split("|")
+    .map(v => normalize(v))
+    .filter(Boolean);
+
+  for(const user of userOptions){
+    for(const correct of correctOptions){
+      if(user === correct) return true;
+      if(singularizeSimple(user) === singularizeSimple(correct)) return true;
+    }
+  }
+
+  return false;
+}
 function escapeHtml(value){ return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
 function shuffle(array){ const copy=[...array]; for(let i=copy.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [copy[i],copy[j]]=[copy[j],copy[i]]; } return copy; }
 function colIndex(cellRef){ const letters = String(cellRef || "").replace(/[0-9]/g, ""); let n=0; for(const ch of letters){ n = n*26 + ch.charCodeAt(0)-64; } return n-1; }
@@ -301,13 +346,13 @@ function startQuiz(count){
   if(typeSelect.value !== "All") pool = pool.filter(q => q.Type === typeSelect.value);
   if(pool.length === 0){ loadStatus.textContent = "No questions match that question type."; return; }
   const requestedCount = Math.min(count, pool.length); selectedQuestionCount = requestedCount; quizQuestions = shuffle(pool).slice(0, requestedCount);
-  currentIndex = 0; score = 0; results = []; currentResultSaved = false;
+  currentIndex = 0; score = 0; results = []; currentResultSaved = false; retryMode = false; retryQuestions = []; retryResults = []; originalResults = []; retryScore = 0; originalQuizQuestions = [...quizQuestions];
   setupPanel.classList.add("hidden"); resultsPanel.classList.add("hidden"); quizPanel.classList.remove("hidden"); setupHeader.classList.add("hidden"); quizHeader.classList.remove("hidden"); showQuestion();
 }
 
 function showQuestion(){
   answered=false; selectedAnswer=""; const q=quizQuestions[currentIndex];
-  progressText.textContent = `Question ${currentIndex+1} of ${quizQuestions.length}`; progressBar.style.width = `${(currentIndex/quizQuestions.length)*100}%`; scoreText.textContent = `Score: ${score}`;
+  progressText.textContent = retryMode ? `Retry Question ${currentIndex+1} of ${quizQuestions.length}` : `Question ${currentIndex+1} of ${quizQuestions.length}`; progressBar.style.width = `${(currentIndex/quizQuestions.length)*100}%`; scoreText.textContent = retryMode ? `Retry Score: ${retryScore}` : `Score: ${score}`;
   questionText.textContent = q.Question; choicesArea.innerHTML = ""; fibInput.value = ""; feedback.className="feedback"; feedback.innerHTML=""; checkBtn.disabled=false; nextBtn.classList.add("hidden");
   if(q.Type === "FIB"){ fibArea.classList.remove("hidden"); return; }
   fibArea.classList.add("hidden"); let choices = q.Type === "TF" ? ["True","False"] : [q.ChoiceA,q.ChoiceB,q.ChoiceC,q.ChoiceD].filter(Boolean); choices = shuffle(choices);
@@ -328,14 +373,37 @@ function checkAnswer(){
   else if(q.Type === "MS") userAnswer = Array.from(document.querySelectorAll(".choice.selected")).map(btn=>btn.dataset.value).join("|");
   else userAnswer = selectedAnswer;
   if(!userAnswer){ feedback.className="feedback incorrect"; feedback.innerHTML="<strong>Please enter or select an answer first.</strong>"; return; }
-  answered=true; let isCorrect = q.Type === "MS" ? answersMatch(splitAnswers(userAnswer), splitAnswers(q.Answer)) : normalize(userAnswer) === normalize(q.Answer); if(isCorrect) score++;
+  answered=true;
+  let isCorrect = false;
+
+  if(q.Type === "MS"){
+    isCorrect = answersMatch(splitAnswers(userAnswer), splitAnswers(q.Answer));
+  } else if(q.Type === "FIB"){
+    isCorrect = fibAnswerMatches(userAnswer, q.Answer);
+  } else {
+    isCorrect = normalize(userAnswer) === normalize(q.Answer);
+  }
+
+  if(retryMode){
+    if(isCorrect) retryScore++;
+  } else {
+    if(isCorrect) score++;
+  }
   document.querySelectorAll(".choice").forEach(btn=>{ const value = btn.dataset.value || btn.textContent; const isCorrectChoice = q.Type === "MS" ? splitAnswers(q.Answer).includes(normalize(value)) : normalize(value) === normalize(q.Answer); const wasSelected = q.Type === "MS" ? btn.classList.contains("selected") : normalize(value) === normalize(userAnswer); if(isCorrectChoice) btn.classList.add("correct"); if(wasSelected && !isCorrectChoice) btn.classList.add("incorrect"); const cb=btn.querySelector('input[type="checkbox"]'); if(cb) cb.disabled=true; });
   const answerDisplay = q.Type === "MS" ? q.Answer.split("|").join(", ") : q.Answer; const userAnswerDisplay = q.Type === "MS" ? userAnswer.split("|").join(", ") : userAnswer;
   feedback.className = isCorrect ? "feedback correct" : "feedback incorrect"; feedback.innerHTML = `<strong>${isCorrect ? "Correct!" : "Not quite."}</strong><br>${!isCorrect ? `<strong>Your Answer:</strong> ${escapeHtml(userAnswerDisplay)}<br>` : ""}<strong>Answer:</strong> ${escapeHtml(answerDisplay)}<br><strong>Explanation:</strong> ${escapeHtml(q.Explanation || "No explanation provided.")}`;
-  results.push({question:q.Question, yourAnswer:userAnswerDisplay, correctAnswer:answerDisplay, explanation:q.Explanation, correct:isCorrect}); checkBtn.disabled=true; nextBtn.classList.remove("hidden"); scoreText.textContent = `Score: ${score}`;
+  const attemptResult = {question:q.Question, yourAnswer:userAnswerDisplay, correctAnswer:answerDisplay, explanation:q.Explanation, correct:isCorrect};
+  if(retryMode){
+    retryResults.push(attemptResult);
+  } else {
+    results.push(attemptResult);
+  }
+  checkBtn.disabled=true;
+  nextBtn.classList.remove("hidden");
+  scoreText.textContent = retryMode ? `Retry Score: ${retryScore}` : `Score: ${score}`;
 }
 checkBtn.addEventListener("click", checkAnswer); fibInput.addEventListener("keydown", e => { if(e.key === "Enter") checkAnswer(); });
-nextBtn.addEventListener("click", () => { currentIndex++; if(currentIndex >= quizQuestions.length) showResults(); else showQuestion(); }); quitBtn.addEventListener("click", showResults);
+nextBtn.addEventListener("click", () => { currentIndex++; if(currentIndex >= quizQuestions.length) { if(retryMode) showRetryResults(); else showResults(); } else showQuestion(); }); quitBtn.addEventListener("click", showResults);
 
 function getResultMessage(percent) {
   if (percent >= 95) return "Outstanding. You appear to have mastered this material.";
@@ -384,6 +452,75 @@ async function showResults(){
   reviewArea.innerHTML = "";
 }
 
+
+function startRetryMissedQuestions(){
+  const missed = results.filter(r => !r.correct);
+
+  if(missed.length === 0){
+    reviewArea.innerHTML = "<p><strong>No missed questions to retry. Excellent!</strong></p>";
+    return;
+  }
+
+  originalResults = [...results];
+  originalQuizQuestions = [...quizQuestions];
+
+  retryQuestions = missed.map(missedItem => {
+    return originalQuizQuestions.find(q => q.Question === missedItem.question);
+  }).filter(Boolean);
+
+  if(retryQuestions.length === 0){
+    reviewArea.innerHTML = "<p><strong>Unable to build retry round from missed questions.</strong></p>";
+    return;
+  }
+
+  retryMode = true;
+  retryResults = [];
+  retryScore = 0;
+  currentIndex = 0;
+  quizQuestions = retryQuestions;
+
+  resultsPanel.classList.add("hidden");
+  setupPanel.classList.add("hidden");
+  quizPanel.classList.remove("hidden");
+  setupHeader.classList.add("hidden");
+  quizHeader.classList.remove("hidden");
+
+  showQuestion();
+}
+
+function showRetryResults(){
+  progressBar.style.width = "100%";
+  quizPanel.classList.add("hidden");
+  resultsPanel.classList.remove("hidden");
+  quizHeader.classList.add("hidden");
+  setupHeader.classList.remove("hidden");
+
+  const total = retryResults.length || retryQuestions.length;
+  const percent = total ? Math.round((retryScore/total)*100) : 0;
+
+  finalScore.textContent = `Retry Round: ${retryScore} / ${total} (${percent}%)`;
+  finalSummary.textContent = retryScore === total
+    ? "Excellent. You corrected all missed questions in the retry round."
+    : "Good retry round. Review any questions still missed below.";
+
+  downloadStatus.classList.add("hidden");
+  hideWorkbookSafetyBox();
+
+  const stillMissed = retryResults.filter(r => !r.correct);
+
+  if(stillMissed.length === 0){
+    reviewArea.innerHTML = "<p><strong>No missed questions remain from the retry round.</strong></p>";
+  } else {
+    const rows = stillMissed.map(r => `<tr><td>${escapeHtml(r.question)}</td><td>${escapeHtml(r.yourAnswer)}</td><td>${escapeHtml(r.correctAnswer)}</td><td>${escapeHtml(r.explanation || "")}</td></tr>`).join("");
+    reviewArea.innerHTML = `<h3>Still Missed After Retry</h3><table><thead><tr><th>Question</th><th>Your Retry Answer</th><th>Correct Answer</th><th>Explanation</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // Restore original first-attempt data so workbook results remain based on the original quiz.
+  results = originalResults;
+  quizQuestions = originalQuizQuestions;
+  retryMode = false;
+}
+
 function makeResultRow(){ const total = results.length || quizQuestions.length; const percent = total ? Math.round((score/total)*100) : 0; return { Date:new Date().toISOString().split("T")[0], QuestionCount:selectedQuestionCount || total, Score:score, Total:total, Percent:percent }; }
 function buildResultsSheetXml(resultRows){
   const rows = [["Date","QuestionCount","Score","Total","Percent"], ...resultRows.map(r=>[r.Date,r.QuestionCount,r.Score,r.Total,r.Percent])];
@@ -417,7 +554,8 @@ cancelDownloadBtn.addEventListener("click", () => {
     "Reload the latest workbook if you edited it in Excel after loading it into the quiz app.";
 });
 
-restartBtn.addEventListener("click", () => { resultsPanel.classList.add("hidden"); setupPanel.classList.remove("hidden"); quizHeader.classList.add("hidden"); setupHeader.classList.remove("hidden"); reviewArea.innerHTML=""; });
+restartBtn.addEventListener("click", () => { resultsPanel.classList.add("hidden"); setupPanel.classList.remove("hidden"); quizHeader.classList.add("hidden"); setupHeader.classList.remove("hidden"); reviewArea.innerHTML=""; downloadStatus.classList.add("hidden"); hideWorkbookSafetyBox(); retryMode=false; retryQuestions=[]; retryResults=[]; originalResults=[]; retryScore=0; originalQuizQuestions=[]; });
+retryMissedBtn.addEventListener("click", startRetryMissedQuestions);
 missedBtn.addEventListener("click", () => {
   const missed = results.filter(r => !r.correct);
   if(missed.length === 0){ reviewArea.innerHTML = "<p><strong>No missed questions. Excellent!</strong></p>"; return; }
@@ -426,7 +564,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v1.6.1 | June 2026
+  Quiz Practice App v1.8.1 | June 2026
 </footer>
 </body>
 </html>
