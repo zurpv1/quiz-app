@@ -63,11 +63,17 @@
 </head>
 <body>
   <div class="app">
-    <div class="header">
+    <div id="setupHeader" class="header">
       <h1 id="pageTitle">Quiz Practice</h1>
       <p class="subtitle">Local study quiz using your selected Excel workbook.</p>
-      <div class="file-note"><strong>How to use:</strong> Load a quiz workbook with <code>Questions</code> and <code>Results</code> sheets. After the quiz, an updated workbook will download automatically. Save it over the existing quiz workbook to keep one file.</div>
+      <div class="file-note"><strong>How to use:</strong> Load a quiz workbook with <code>Questions</code> and <code>Results</code> sheets. After the quiz, an updated workbook will download automatically. Save it over the existing quiz workbook to keep one file.<br><br><strong>Important:</strong> This download contains the questions from the workbook currently loaded in the app. If you edit the workbook in Excel, reload it here before taking another quiz or saving results.</div>
     </div>
+
+    <div id="quizHeader" class="header hidden">
+      <h1 id="quizHeaderTitle">Quiz Practice</h1>
+      <p class="subtitle">Local study quiz using your selected Excel workbook.</p>
+    </div>
+
 
     <div id="setupPanel" class="panel">
       <h2>Setup</h2>
@@ -114,6 +120,18 @@
       <div id="finalScore" class="summary-score"></div>
       <p id="finalSummary"></p>
       <div id="downloadStatus" class="file-note hidden"></div>
+      <div id="safetyBox" class="file-note hidden">
+        <h3 style="margin-top:0;color:#9b1c1c;">⚠ Workbook Safety Check</h3>
+        <div id="safetyDetails"></div>
+        <p>
+          Have you edited this workbook in Excel since loading it?<br><br>
+          If yes, click Cancel and reload the workbook before saving results.
+        </p>
+        <div class="actions">
+          <button id="confirmDownloadBtn">Download Updated Workbook</button>
+          <button id="cancelDownloadBtn" class="light">Cancel</button>
+        </div>
+      </div>
       <div class="actions"><button id="restartBtn">Take Another Quiz</button><button id="missedBtn" class="secondary">Review Missed Questions</button></div>
       <div id="reviewArea"></div>
     </div>
@@ -123,9 +141,17 @@
 let allQuestions = [], quizQuestions = [], currentIndex = 0, score = 0, selectedAnswer = "", answered = false, results = [];
 let quizTitle = "Quiz Practice", historical = [], selectedQuestionCount = 0, currentResultSaved = false;
 let workbookZip = null, workbookFileName = "quiz_workbook.xlsx", resultsSheetPath = "", questionsSheetPath = "";
+let workbookLoadedAt = null, workbookLastModified = null;
 
+const setupHeader = document.getElementById("setupHeader");
+const quizHeader = document.getElementById("quizHeader");
+const quizHeaderTitle = document.getElementById("quizHeaderTitle");
 const pageTitle = document.getElementById("pageTitle"), xlsxFile = document.getElementById("xlsxFile"), loadBtn = document.getElementById("loadBtn"), loadStatus = document.getElementById("loadStatus"), statsArea = document.getElementById("statsArea"), quizStartArea = document.getElementById("quizStartArea"), questionCountText = document.getElementById("questionCountText"), typeSelect = document.getElementById("typeSelect");
-const setupPanel = document.getElementById("setupPanel"), quizPanel = document.getElementById("quizPanel"), resultsPanel = document.getElementById("resultsPanel"), progressText = document.getElementById("progressText"), progressBar = document.getElementById("progressBar"), scoreText = document.getElementById("scoreText"), questionText = document.getElementById("questionText"), choicesArea = document.getElementById("choicesArea"), fibArea = document.getElementById("fibArea"), fibInput = document.getElementById("fibInput"), feedback = document.getElementById("feedback"), checkBtn = document.getElementById("checkBtn"), nextBtn = document.getElementById("nextBtn"), quitBtn = document.getElementById("quitBtn"), restartBtn = document.getElementById("restartBtn"), missedBtn = document.getElementById("missedBtn"), finalScore = document.getElementById("finalScore"), finalSummary = document.getElementById("finalSummary"), reviewArea = document.getElementById("reviewArea"), downloadStatus = document.getElementById("downloadStatus");
+const setupPanel = document.getElementById("setupPanel"), quizPanel = document.getElementById("quizPanel"), resultsPanel = document.getElementById("resultsPanel"), progressText = document.getElementById("progressText"), progressBar = document.getElementById("progressBar"), scoreText = document.getElementById("scoreText"), questionText = document.getElementById("questionText"), choicesArea = document.getElementById("choicesArea"), fibArea = document.getElementById("fibArea"), fibInput = document.getElementById("fibInput"), feedback = document.getElementById("feedback"), checkBtn = document.getElementById("checkBtn"), nextBtn = document.getElementById("nextBtn"), quitBtn = document.getElementById("quitBtn"), restartBtn = document.getElementById("restartBtn"), missedBtn = document.getElementById("missedBtn"), finalScore = document.getElementById("finalScore"), finalSummary = document.getElementById("finalSummary"), reviewArea = document.getElementById("reviewArea"), downloadStatus = document.getElementById("downloadStatus"),
+safetyBox = document.getElementById("safetyBox"),
+safetyDetails = document.getElementById("safetyDetails"),
+confirmDownloadBtn = document.getElementById("confirmDownloadBtn"),
+cancelDownloadBtn = document.getElementById("cancelDownloadBtn");
 
 document.getElementById("quiz10Btn").addEventListener("click", () => startQuiz(10));
 document.getElementById("quiz25Btn").addEventListener("click", () => startQuiz(25));
@@ -218,7 +244,7 @@ async function readSheetRows(parser, path, sharedStrings){
 function loadQuestionsFromRows(rows){
   if(!rows || rows.length < 3) throw new Error("Questions sheet does not contain expected rows.");
   if(normalize(rows[0][0]) === "title") quizTitle = rows[0][1] || "Quiz Practice";
-  pageTitle.textContent = quizTitle; document.title = quizTitle;
+  pageTitle.textContent = quizTitle; quizHeaderTitle.textContent = quizTitle; document.title = quizTitle;
   const headerRowIndex = normalize(rows[1][0]) === "id" ? 1 : rows.findIndex(r => normalize(r[0]) === "id");
   if(headerRowIndex < 0) throw new Error("Questions sheet must have an ID header row.");
   const headers = rows[headerRowIndex].map(h => String(h || "").trim());
@@ -262,6 +288,8 @@ loadBtn.addEventListener("click", async () => {
   if(!file){ loadStatus.textContent = "Please choose a quiz workbook first."; return; }
   try{
     workbookFileName = file.name;
+    workbookLoadedAt = new Date();
+    workbookLastModified = new Date(file.lastModified);
     loadStatus.textContent = "Loading quiz workbook...";
     const buffer = await file.arrayBuffer();
     await parseWorkbook(buffer);
@@ -274,7 +302,7 @@ function startQuiz(count){
   if(pool.length === 0){ loadStatus.textContent = "No questions match that question type."; return; }
   const requestedCount = Math.min(count, pool.length); selectedQuestionCount = requestedCount; quizQuestions = shuffle(pool).slice(0, requestedCount);
   currentIndex = 0; score = 0; results = []; currentResultSaved = false;
-  setupPanel.classList.add("hidden"); resultsPanel.classList.add("hidden"); quizPanel.classList.remove("hidden"); showQuestion();
+  setupPanel.classList.add("hidden"); resultsPanel.classList.add("hidden"); quizPanel.classList.remove("hidden"); setupHeader.classList.add("hidden"); quizHeader.classList.remove("hidden"); showQuestion();
 }
 
 function showQuestion(){
@@ -309,13 +337,51 @@ function checkAnswer(){
 checkBtn.addEventListener("click", checkAnswer); fibInput.addEventListener("keydown", e => { if(e.key === "Enter") checkAnswer(); });
 nextBtn.addEventListener("click", () => { currentIndex++; if(currentIndex >= quizQuestions.length) showResults(); else showQuestion(); }); quitBtn.addEventListener("click", showResults);
 
+function getResultMessage(percent) {
+  if (percent >= 95) return "Outstanding. You appear to have mastered this material.";
+  if (percent >= 90) return "Excellent. A quick review should have you ready for assessment.";
+  if (percent >= 80) return "Good understanding. Focus on the missed questions and weaker areas.";
+  if (percent >= 70) return "Moderate understanding. Additional review is recommended.";
+  if (percent >= 60) return "Partial understanding. Revisit the summary and key concepts.";
+  return "Additional study is strongly recommended before testing.";
+}
+
+function showWorkbookSafetyBox() {
+  const loadedAtText = workbookLoadedAt ? workbookLoadedAt.toLocaleString() : "unknown";
+  const modifiedText = workbookLastModified ? workbookLastModified.toLocaleString() : "unknown";
+
+  safetyDetails.innerHTML =
+    "<strong>Workbook:</strong><br>" + escapeHtml(workbookFileName) + "<br><br>" +
+    "<strong>Last Modified:</strong><br>" + escapeHtml(modifiedText) + "<br><br>" +
+    "<strong>Loaded:</strong><br>" + escapeHtml(loadedAtText);
+
+  safetyBox.classList.remove("hidden");
+}
+
+function hideWorkbookSafetyBox() {
+  safetyBox.classList.add("hidden");
+}
+
 async function showResults(){
-  progressBar.style.width = "100%"; quizPanel.classList.add("hidden"); resultsPanel.classList.remove("hidden");
-  const total = results.length || quizQuestions.length; const percent = total ? Math.round((score/total)*100) : 0;
-  finalScore.textContent = `${score} / ${total} (${percent}%)`; finalSummary.textContent = percent >= 80 ? "Nice work. You are in good shape on this set." : percent >= 60 ? "You are getting there. Review the missed questions and try again." : "This is a good study signal. Focus on the missed questions first.";
+  progressBar.style.width = "100%";
+  quizPanel.classList.add("hidden");
+  resultsPanel.classList.remove("hidden");
+  quizHeader.classList.add("hidden");
+  setupHeader.classList.remove("hidden");
+
+  const total = results.length || quizQuestions.length;
+  const percent = total ? Math.round((score/total)*100) : 0;
+
+  finalScore.textContent = `${score} / ${total} (${percent}%)`;
+  finalSummary.textContent = getResultMessage(percent);
+
   downloadStatus.classList.remove("hidden");
-  downloadStatus.innerHTML = "Quiz finished. Starting results download...<br><br><strong>Important:</strong> Save the downloaded workbook over your existing quiz workbook to preserve your results history.";
-  await downloadUpdatedWorkbook(); reviewArea.innerHTML="";
+  downloadStatus.innerHTML =
+    "Quiz finished.<br><br>" +
+    "Review the workbook safety check below before downloading your updated workbook.";
+
+  showWorkbookSafetyBox();
+  reviewArea.innerHTML = "";
 }
 
 function makeResultRow(){ const total = results.length || quizQuestions.length; const percent = total ? Math.round((score/total)*100) : 0; return { Date:new Date().toISOString().split("T")[0], QuestionCount:selectedQuestionCount || total, Score:score, Total:total, Percent:percent }; }
@@ -336,7 +402,22 @@ async function downloadUpdatedWorkbook(){
   downloadStatus.innerHTML = "Results download started.<br><br><strong>Save over:</strong> " + escapeHtml(workbookFileName) + "<br>This keeps your quiz bank and results in one workbook.";
 }
 
-restartBtn.addEventListener("click", () => { resultsPanel.classList.add("hidden"); setupPanel.classList.remove("hidden"); reviewArea.innerHTML=""; });
+confirmDownloadBtn.addEventListener("click", async () => {
+  hideWorkbookSafetyBox();
+  downloadStatus.innerHTML =
+    "Starting results download...<br><br>" +
+    "<strong>Important:</strong> Save the downloaded workbook over your existing quiz workbook to preserve your results history.";
+  await downloadUpdatedWorkbook();
+});
+
+cancelDownloadBtn.addEventListener("click", () => {
+  hideWorkbookSafetyBox();
+  downloadStatus.innerHTML =
+    "<strong>Download canceled.</strong><br><br>" +
+    "Reload the latest workbook if you edited it in Excel after loading it into the quiz app.";
+});
+
+restartBtn.addEventListener("click", () => { resultsPanel.classList.add("hidden"); setupPanel.classList.remove("hidden"); quizHeader.classList.add("hidden"); setupHeader.classList.remove("hidden"); reviewArea.innerHTML=""; });
 missedBtn.addEventListener("click", () => {
   const missed = results.filter(r => !r.correct);
   if(missed.length === 0){ reviewArea.innerHTML = "<p><strong>No missed questions. Excellent!</strong></p>"; return; }
@@ -345,7 +426,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v1.3 | June 2026
+  Quiz Practice App v1.6.1 | June 2026
 </footer>
 </body>
 </html>
