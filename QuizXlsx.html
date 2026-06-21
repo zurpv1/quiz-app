@@ -186,12 +186,12 @@ function singularizeSimple(value){
 
 function fibAnswerMatches(userAnswer, correctAnswer){
   const userOptions = String(userAnswer || "")
-    .split(/[|;]/)
+    .split("|")
     .map(v => normalize(v))
     .filter(Boolean);
 
   const correctOptions = String(correctAnswer || "")
-    .split("|")
+    .split(/[|;]/)
     .map(v => normalize(v))
     .filter(Boolean);
 
@@ -365,7 +365,20 @@ function showQuestion(){
   });
 }
 
-function splitAnswers(value){ return String(value||"").split("|").map(v=>normalize(v)).filter(Boolean).sort(); }
+function splitAnswers(value){
+  return String(value || "")
+    .split(/[|;]/)
+    .map(v => normalize(v))
+    .filter(Boolean)
+    .sort((a,b) => a.localeCompare(b));
+}
+
+function splitDisplayAnswers(value){
+  return String(value || "")
+    .split(/[|;]/)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
 function answersMatch(userAnswers, correctAnswers){ if(userAnswers.length !== correctAnswers.length) return false; return userAnswers.every((v,i)=>v===correctAnswers[i]); }
 function checkAnswer(){
   if(answered) return; const q=quizQuestions[currentIndex]; let userAnswer="";
@@ -390,7 +403,8 @@ function checkAnswer(){
     if(isCorrect) score++;
   }
   document.querySelectorAll(".choice").forEach(btn=>{ const value = btn.dataset.value || btn.textContent; const isCorrectChoice = q.Type === "MS" ? splitAnswers(q.Answer).includes(normalize(value)) : normalize(value) === normalize(q.Answer); const wasSelected = q.Type === "MS" ? btn.classList.contains("selected") : normalize(value) === normalize(userAnswer); if(isCorrectChoice) btn.classList.add("correct"); if(wasSelected && !isCorrectChoice) btn.classList.add("incorrect"); const cb=btn.querySelector('input[type="checkbox"]'); if(cb) cb.disabled=true; });
-  const answerDisplay = q.Type === "MS" ? q.Answer.split("|").join(", ") : q.Answer; const userAnswerDisplay = q.Type === "MS" ? userAnswer.split("|").join(", ") : userAnswer;
+  const answerDisplay = q.Type === "MS" ? splitDisplayAnswers(q.Answer).join(", ") : q.Answer;
+  const userAnswerDisplay = q.Type === "MS" ? splitDisplayAnswers(userAnswer).join(", ") : userAnswer;
   feedback.className = isCorrect ? "feedback correct" : "feedback incorrect"; feedback.innerHTML = `<strong>${isCorrect ? "Correct!" : "Not quite."}</strong><br>${!isCorrect ? `<strong>Your Answer:</strong> ${escapeHtml(userAnswerDisplay)}<br>` : ""}<strong>Answer:</strong> ${escapeHtml(answerDisplay)}<br><strong>Explanation:</strong> ${escapeHtml(q.Explanation || "No explanation provided.")}`;
   const attemptResult = {question:q.Question, yourAnswer:userAnswerDisplay, correctAnswer:answerDisplay, explanation:q.Explanation, correct:isCorrect};
   if(retryMode){
@@ -564,7 +578,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v1.8.1 | June 2026
+  Quiz Practice App v1.8.2 | June 2026
 </footer>
 </body>
 </html>
