@@ -186,7 +186,7 @@ function singularizeSimple(value){
 
 function fibAnswerMatches(userAnswer, correctAnswer){
   const userOptions = String(userAnswer || "")
-    .split("|")
+    .split(/[|;]/)
     .map(v => normalize(v))
     .filter(Boolean);
 
