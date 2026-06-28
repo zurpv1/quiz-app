@@ -355,7 +355,7 @@ function showQuestion(){
   progressText.textContent = retryMode ? `Retry Question ${currentIndex+1} of ${quizQuestions.length}` : `Question ${currentIndex+1} of ${quizQuestions.length}`; progressBar.style.width = `${(currentIndex/quizQuestions.length)*100}%`; scoreText.textContent = retryMode ? `Retry Score: ${retryScore}` : `Score: ${score}`;
   questionText.textContent = q.Question; choicesArea.innerHTML = ""; fibInput.value = ""; feedback.className="feedback"; feedback.innerHTML=""; checkBtn.disabled=false; nextBtn.classList.add("hidden");
   if(q.Type === "FIB"){ fibArea.classList.remove("hidden"); return; }
-  fibArea.classList.add("hidden"); let choices = q.Type === "TF" ? ["True","False"] : [q.ChoiceA,q.ChoiceB,q.ChoiceC,q.ChoiceD].filter(Boolean); choices = shuffle(choices);
+  fibArea.classList.add("hidden"); let choices = q.Type === "TF" ? ["True","False"] : [q.ChoiceA,q.ChoiceB,q.ChoiceC,q.ChoiceD].filter(Boolean);
   choices.forEach(choice => {
     if(q.Type === "MS"){
       const label=document.createElement("label"); label.className="choice"; label.dataset.value=choice; const checkbox=document.createElement("input"); checkbox.type="checkbox"; const span=document.createElement("span"); span.textContent=choice; label.appendChild(checkbox); label.appendChild(span); checkbox.addEventListener("change",()=>{ if(answered){ checkbox.checked=!checkbox.checked; return; } label.classList.toggle("selected", checkbox.checked); }); choicesArea.appendChild(label);
@@ -379,6 +379,35 @@ function splitDisplayAnswers(value){
     .map(v => v.trim())
     .filter(Boolean);
 }
+
+function answerTokenToText(q, token){
+  const raw = String(token || "").trim();
+  const key = raw.toUpperCase();
+  const map = {
+    "A": q.ChoiceA,
+    "B": q.ChoiceB,
+    "C": q.ChoiceC,
+    "D": q.ChoiceD
+  };
+  return map[key] ? String(map[key]).trim() : raw;
+}
+
+function correctAnswerTexts(q){
+  if(q.Type === "MS"){
+    return String(q.Answer || "")
+      .split(/[|;]/)
+      .map(token => answerTokenToText(q, token))
+      .filter(Boolean);
+  }
+  return [answerTokenToText(q, q.Answer)];
+}
+
+function normalizedCorrectAnswers(q){
+  return correctAnswerTexts(q)
+    .map(v => normalize(v))
+    .filter(Boolean)
+    .sort((a,b) => a.localeCompare(b));
+}
 function answersMatch(userAnswers, correctAnswers){ if(userAnswers.length !== correctAnswers.length) return false; return userAnswers.every((v,i)=>v===correctAnswers[i]); }
 function checkAnswer(){
   if(answered) return; const q=quizQuestions[currentIndex]; let userAnswer="";
@@ -390,11 +419,11 @@ function checkAnswer(){
   let isCorrect = false;
 
   if(q.Type === "MS"){
-    isCorrect = answersMatch(splitAnswers(userAnswer), splitAnswers(q.Answer));
+    isCorrect = answersMatch(splitAnswers(userAnswer), normalizedCorrectAnswers(q));
   } else if(q.Type === "FIB"){
     isCorrect = fibAnswerMatches(userAnswer, q.Answer);
   } else {
-    isCorrect = normalize(userAnswer) === normalize(q.Answer);
+    isCorrect = normalize(userAnswer) === normalizedCorrectAnswers(q)[0];
   }
 
   if(retryMode){
@@ -402,8 +431,8 @@ function checkAnswer(){
   } else {
     if(isCorrect) score++;
   }
-  document.querySelectorAll(".choice").forEach(btn=>{ const value = btn.dataset.value || btn.textContent; const isCorrectChoice = q.Type === "MS" ? splitAnswers(q.Answer).includes(normalize(value)) : normalize(value) === normalize(q.Answer); const wasSelected = q.Type === "MS" ? btn.classList.contains("selected") : normalize(value) === normalize(userAnswer); if(isCorrectChoice) btn.classList.add("correct"); if(wasSelected && !isCorrectChoice) btn.classList.add("incorrect"); const cb=btn.querySelector('input[type="checkbox"]'); if(cb) cb.disabled=true; });
-  const answerDisplay = q.Type === "MS" ? splitDisplayAnswers(q.Answer).join(", ") : q.Answer;
+  document.querySelectorAll(".choice").forEach(btn=>{ const value = btn.dataset.value || btn.textContent; const isCorrectChoice = normalizedCorrectAnswers(q).includes(normalize(value)); const wasSelected = q.Type === "MS" ? btn.classList.contains("selected") : normalize(value) === normalize(userAnswer); if(isCorrectChoice) btn.classList.add("correct"); if(wasSelected && !isCorrectChoice) btn.classList.add("incorrect"); const cb=btn.querySelector('input[type="checkbox"]'); if(cb) cb.disabled=true; });
+  const answerDisplay = correctAnswerTexts(q).join(", ");
   const userAnswerDisplay = q.Type === "MS" ? splitDisplayAnswers(userAnswer).join(", ") : userAnswer;
   feedback.className = isCorrect ? "feedback correct" : "feedback incorrect"; feedback.innerHTML = `<strong>${isCorrect ? "Correct!" : "Not quite."}</strong><br>${!isCorrect ? `<strong>Your Answer:</strong> ${escapeHtml(userAnswerDisplay)}<br>` : ""}<strong>Answer:</strong> ${escapeHtml(answerDisplay)}<br><strong>Explanation:</strong> ${escapeHtml(q.Explanation || "No explanation provided.")}`;
   const attemptResult = {question:q.Question, yourAnswer:userAnswerDisplay, correctAnswer:answerDisplay, explanation:q.Explanation, correct:isCorrect};
@@ -578,7 +607,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v1.8.2 | June 2026
+  Quiz Practice App v2.0.1 | June 2026
 </footer>
 </body>
 </html>
