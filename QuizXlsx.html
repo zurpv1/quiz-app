@@ -161,6 +161,17 @@ typeSelect.addEventListener("change", updateQuestionCountText);
 
 function normalize(value){ return String(value || "").trim().toLowerCase(); }
 
+function normalizeLoadedAnswer(q){
+  const type = String(q.Type || "").trim().toUpperCase();
+  const ans = String(q.Answer ?? "").trim();
+  const key = ans.toUpperCase();
+
+  if(type === "TF"){
+    if(key === "1" || key === "TRUE") q.Answer = "True";
+    else if(key === "0" || key === "FALSE") q.Answer = "False";
+  }
+}
+
 function singularizeSimple(value){
   let text = normalize(value);
 
@@ -294,8 +305,8 @@ function loadQuestionsFromRows(rows){
   if(headerRowIndex < 0) throw new Error("Questions sheet must have an ID header row.");
   const headers = rows[headerRowIndex].map(h => String(h || "").trim());
   allQuestions = rows.slice(headerRowIndex + 1).map(row => {
-    const obj = {}; headers.forEach((h,i)=> obj[h] = row[i] ? String(row[i]).trim() : ""); return obj;
-  }).filter(q => q.ID && q.Type && q.Question && q.Answer);
+    const obj = {}; headers.forEach((h,i)=> obj[h] = (row[i] !== undefined && row[i] !== null) ? String(row[i]).trim() : ""); normalizeLoadedAnswer(obj); return obj;
+  }).filter(q => q.ID && q.Type && q.Question && q.Answer !== "");
   if(allQuestions.length === 0) throw new Error("No valid questions found.");
   loadStatus.textContent = `Loaded ${allQuestions.length} questions from ${workbookFileName}.`;
   updateQuestionCountText(); quizStartArea.classList.remove("hidden");
@@ -381,8 +392,16 @@ function splitDisplayAnswers(value){
 }
 
 function answerTokenToText(q, token){
-  const raw = String(token || "").trim();
+  const raw = String(token ?? "").trim();
   const key = raw.toUpperCase();
+
+  // Excel may store TRUE/FALSE cells as 1/0.
+  // Normalize those values for True/False questions.
+  if(String(q.Type || "").trim().toUpperCase() === "TF"){
+    if(key === "1" || key === "TRUE") return "True";
+    if(key === "0" || key === "FALSE") return "False";
+  }
+
   const map = {
     "A": q.ChoiceA,
     "B": q.ChoiceB,
@@ -607,7 +626,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v2.0.1 | June 2026
+  Quiz Practice App v2.0.3 | June 2026
 </footer>
 </body>
 </html>
