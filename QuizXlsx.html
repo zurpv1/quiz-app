@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quiz Practice App v3.2.1</title>
+  <title>Quiz Practice App v3.2.2</title>
   <script src="jszip.min.js"></script>
   <style>
     :root {
@@ -307,7 +307,7 @@
       <p id="finalSummary"></p>
       <div id="downloadStatus" class="file-note hidden"></div>
       <div id="safetyBox" class="file-note hidden">
-        <h3 style="margin-top:0;color:#9b1c1c;">⚠ Workbook Safety Check</h3>
+        <h3 style="margin-top:0;color:#fbb52b;">⚠ Workbook Safety Check</h3>
         <div id="safetyDetails"></div>
         <p>
           Have you edited this workbook in Excel since loading it?<br><br>
@@ -854,9 +854,16 @@ function answerTokenToText(q, token){
 
 function correctAnswerTexts(q){
   if(q.Type === "MS"){
+    // Multiple Select answers may be stored as:
+    //   A,B,C
+    //   A|B|C
+    //   Genetics, Environment, Neuroscience
+    //   Genetics|Environment|Neuroscience
+    // Split on comma, pipe, or semicolon, then normalize each token.
     return String(q.Answer || "")
-      .split(/[|;]/)
+      .split(/[|;,]/)
       .map(token => answerTokenToText(q, token))
+      .map(v => String(v || "").trim())
       .filter(Boolean);
   }
   return [answerTokenToText(q, q.Answer)];
@@ -1093,7 +1100,7 @@ missedBtn.addEventListener("click", () => {
 });
 </script>
 <footer class="app-footer">
-  Quiz Practice App v3.2.1 | June 2026
+  Quiz Practice App v3.2.2 | July 2026
 </footer>
 </body>
 </html>
